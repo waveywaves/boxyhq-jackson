@@ -14,20 +14,21 @@ jobs:
       - name: checkout
         uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
       - name: Generate UUID image name
         id: uuid
-        run: echo "::set-output name=uuid::$(uuidgen)"
+        run: echo "UUID_TAG=$(uuidgen)" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: ttl.sh/${{ steps.uuid.outputs.uuid }}
+          images: registry.uffizzi.com/${{ env.UUID_TAG }}
           tags: |
-            type=raw,value=24h
+            type=raw,value=60h
+
       - name: Build Image
         uses: docker/build-push-action@v3
         with:
@@ -37,14 +38,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           load: true # makes image available to docker client
           push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: DEBUG - Image information
-        if: ${{ runner.debug }}
-        run: |
-          docker image ls ttl.sh/${{ steps.uuid.outputs.uuid }}:24h
-          docker history ttl.sh/${{ steps.uuid.outputs.uuid }}:24h
       - name: Push Image to TTL.SH
-        run: docker push ttl.sh/${{ steps.uuid.outputs.uuid }}:24h
+        run: docker push registry.uffizzi.com/${{ env.UUID_TAG }}:60h
 
   render-compose-file:
     name: Render Docker Compose File
@@ -53,13 +51,13 @@ jobs:
     needs:
       - build-jackson
     outputs:
-      compose-file-cache-key: ${{ steps.hash.outputs.hash }}
+      compose-file-cache-key: ${{ env.COMPOSE_FILE_HASH }}
     steps:
       - name: Checkout git repo
         uses: actions/checkout@v3
       - name: Render Compose File
         run: |
-          SAML_JACKSON_IMAGE=$(echo ${{ needs.build-saml-jackson.outputs.tags }})
+          SAML_JACKSON_IMAGE=$(echo ${{ needs.build-jackson.outputs.tags }})
           export SAML_JACKSON_IMAGE
           # Render simple template from environment variables.
           envsubst < uffizzi/docker-compose.template.yml > docker-compose.rendered.yml
